@@ -4,7 +4,9 @@ async = require "async"
 
 module.exports = DocUpdaterClient =
 	randomId: () ->
-		return require("../../../../app/js/mongojs").ObjectId().toString()
+		chars = for i in [1..24]
+			Math.random().toString(16)[2]
+		return chars.join("")
 
 	sendUpdate: (project_id, doc_id, update, callback = (error) ->) ->
 		rclient.rpush "PendingUpdates:#{doc_id}", JSON.stringify(update), (error)->
@@ -43,11 +45,13 @@ module.exports = DocUpdaterClient =
 		request.post "http://localhost:3003/project/#{project_id}/doc/#{doc_id}/flush", (error, res, body) ->
 			callback error, res, body
 
-	setDocLines: (project_id, doc_id, lines, callback = (error) ->) ->
+	setDocLines: (project_id, doc_id, lines, source, user_id, callback = (error) ->) ->
 		request.post {
 			url: "http://localhost:3003/project/#{project_id}/doc/#{doc_id}"
 			json:
 				lines: lines
+				source: source
+				user_id: user_id
 		}, (error, res, body) ->
 			callback error, res, body
 

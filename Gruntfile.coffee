@@ -5,8 +5,14 @@ module.exports = (grunt) ->
 	grunt.loadNpmTasks 'grunt-available-tasks'
 	grunt.loadNpmTasks 'grunt-execute'
 	grunt.loadNpmTasks 'grunt-bunyan'
+	grunt.loadNpmTasks 'grunt-forever'
 	
 	grunt.initConfig
+		forever:
+			app:
+				options:
+					index: "app.js"
+
 		execute:
 			app:
 				src: "app.js"
@@ -45,16 +51,17 @@ module.exports = (grunt) ->
 
 		clean:
 			app: ["app/js"]
-			acceptance_tests: ["test/unit/js"]
+			acceptance_tests: ["test/acceptance/js"]
+			unit_tests: ["test/unit/js"]
 
 		mochaTest:
 			unit:
-				src: ['test/unit/js/**/*.js']
+				src: ["test/unit/js/#{grunt.option('feature') or '**'}/*.js"]
 				options:
 					reporter: grunt.option('reporter') or 'spec'
 					grep: grunt.option("grep")
 			acceptance:
-				src: ['test/acceptance/js/**/*.js']
+				src: ["test/acceptance/js/#{grunt.option('feature') or '*'}.js"]
 				options:
 					reporter: grunt.option('reporter') or 'spec'
 					grep: grunt.option("grep")
@@ -96,14 +103,14 @@ module.exports = (grunt) ->
 	grunt.registerTask 'help', 'Display this help list', 'availabletasks'
 
 	grunt.registerTask 'compile:server', 'Compile the server side coffee script', ['clean:app', 'coffee:app', 'coffee:app_dir']
-	grunt.registerTask 'compile:unit_tests', 'Compile the unit tests', ['coffee:unit_tests']
+	grunt.registerTask 'compile:unit_tests', 'Compile the unit tests', ['clean:unit_tests', 'coffee:unit_tests']
 	grunt.registerTask 'compile:acceptance_tests', 'Compile the acceptance tests', ['clean:acceptance_tests', 'coffee:acceptance_tests']
 	grunt.registerTask 'compile:tests', 'Compile all the tests', ['compile:acceptance_tests', 'compile:unit_tests']
 	grunt.registerTask 'compile', 'Compiles everything need to run document-updater-sharelatex', ['compile:server']
 
 	grunt.registerTask 'install', "Compile everything when installing as an npm module", ['compile']
 
-	grunt.registerTask 'test:unit', 'Run the unit tests (use --grep=<regex> for individual tests)', ['compile:unit_tests', 'mochaTest:unit']
+	grunt.registerTask 'test:unit', 'Run the unit tests (use --grep=<regex> for individual tests)', ['compile:server', 'compile:unit_tests', 'mochaTest:unit']
 	grunt.registerTask 'test:acceptance', 'Run the acceptance tests (use --grep=<regex> for individual tests)', ['compile:acceptance_tests', 'mochaTest:acceptance']
 
 	grunt.registerTask 'run', "Compile and run the document-updater-sharelatex server", ['compile', 'bunyan', 'execute']

@@ -28,13 +28,14 @@ module.exports = MockWebApi =
 					res.send 404
 
 		app.post "/project/:project_id/doc/:doc_id", express.bodyParser(), (req, res, next) =>
-			@setDocumentLines req.params.project_id, req.params.doc_id, req.body.lines, (error) ->
+			MockWebApi.setDocumentLines req.params.project_id, req.params.doc_id, req.body.lines, (error) ->
 				if error?
 					res.send 500
 				else
 					res.send 204
 
-		app.listen(3000)
+		app.listen 3000, (error) ->
+			throw error if error?
 
 MockWebApi.run()
 

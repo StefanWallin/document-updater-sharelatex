@@ -2,9 +2,25 @@ request = require "request"
 Settings = require "settings-sharelatex"
 Errors = require "./Errors"
 Metrics = require "./Metrics"
+{db, ObjectId} = require("./mongojs")
+logger = require "logger-sharelatex"
 
 module.exports = PersistenceManager =
-	getDoc: (project_id, doc_id, _callback = (error, lines) ->) ->
+	getDoc: (project_id, doc_id, callback = (error, lines, version) ->) ->
+		PersistenceManager.getDocFromWeb project_id, doc_id, (error, lines) ->
+			return callback(error) if error?
+			PersistenceManager.getDocVersionInMongo doc_id, (error, version) ->
+				return callback(error) if error?
+				callback null, lines, version
+
+	setDoc: (project_id, doc_id, lines, version, callback = (error) ->) ->
+		PersistenceManager.setDocInWeb project_id, doc_id, lines, (error) ->
+			return callback(error) if error?
+			PersistenceManager.setDocVersionInMongo doc_id, version, (error) ->
+				return callback(error) if error?
+				callback()
+
+	getDocFromWeb: (project_id, doc_id, _callback = (error, lines) ->) ->
 		timer = new Metrics.Timer("persistenceManager.getDoc")
 		callback = (args...) ->
 			timer.done()
@@ -34,7 +50,7 @@ module.exports = PersistenceManager =
 			else
 				return callback(new Error("error accessing web API: #{url} #{res.statusCode}"))
 
-	setDoc: (project_id, doc_id, lines, _callback = (error) ->) ->
+	setDocInWeb: (project_id, doc_id, lines, _callback = (error) ->) ->
 		timer = new Metrics.Timer("persistenceManager.setDoc")
 		callback = (args...) ->
 			timer.done()
@@ -62,5 +78,26 @@ module.exports = PersistenceManager =
 			else
 				return callback(new Error("error accessing web API: #{url} #{res.statusCode}"))
 		
+	getDocVersionInMongo: (doc_id, callback = (error, version) ->) ->
+		db.docOps.find {
+			doc_id: ObjectId(doc_id)
+		}, {
+			version: 1
+		}, (error, docs) ->
+			return callback(error) if error?
+			if docs.length < 1 or !docs[0].version?
+				return callback null, 0
+			else
+				return callback null, docs[0].version
+
+	setDocVersionInMongo: (doc_id, version, callback = (error) ->) ->
+		db.docOps.update {
+			doc_id: ObjectId(doc_id)
+		}, {
+			$set: version: version
+		}, {
+			upsert: true
+		}, callback
+
 
 			

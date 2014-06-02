@@ -35,11 +35,13 @@ describe "Flushing a project", ->
 		for doc in @docs
 			MockWebApi.insertDoc @project_id, doc.id, {
 				lines: doc.lines
+				version: doc.update.v
 			}
 
 	describe "with documents which have been updated", ->
 		before (done) ->
 			sinon.spy MockWebApi, "setDocumentLines"
+
 			async.series @docs.map((doc) =>
 				(callback) =>
 					DocUpdaterClient.preloadDoc @project_id, doc.id, (error) =>

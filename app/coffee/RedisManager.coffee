@@ -9,7 +9,10 @@ keys = require('./RedisKeyBuilder')
 logger = require('logger-sharelatex')
 metrics = require('./Metrics')
 
-module.exports =
+# Make times easy to read
+minutes = 60 # seconds for Redis expire
+
+module.exports = RedisManager =
 	putDocInMemory : (project_id, doc_id, docLines, version, callback)->
 		timer = new metrics.Timer("redis.put-doc")
 		logger.log project_id:project_id, doc_id:doc_id, docLines:docLines, version: version, "putting doc in redis"
@@ -17,7 +20,6 @@ module.exports =
 		multi.set keys.docLines(doc_id:doc_id), JSON.stringify(docLines)
 		multi.set keys.projectKey({doc_id:doc_id}), project_id
 		multi.set keys.docVersion(doc_id:doc_id), version
-		multi.del keys.docOps(doc_id:doc_id)
 		multi.sadd keys.allDocs, doc_id
 		multi.sadd keys.docsInProject(project_id:project_id), doc_id
 		multi.exec (err, replys)->
@@ -31,7 +33,6 @@ module.exports =
 		multi.del keys.docLines(doc_id:doc_id)
 		multi.del keys.projectKey(doc_id:doc_id)
 		multi.del keys.docVersion(doc_id:doc_id)
-		multi.del keys.docOps(doc_id:doc_id)
 		multi.srem keys.docsInProject(project_id:project_id), doc_id
 		multi.srem keys.allDocs, doc_id
 		multi.exec (err, replys)->
@@ -111,7 +112,6 @@ module.exports =
 		rclient.srem keys.docsWithPendingUpdates, doc_key, callback
 
 	getPreviousDocOps: (doc_id, start, end, callback = (error, jsonOps) ->) ->
-		# TODO: parse the ops and return them as objects, not JSON
 		rclient.llen keys.docOps(doc_id: doc_id), (error, length) ->
 			return callback(error) if error?
 			rclient.get keys.docVersion(doc_id: doc_id), (error, version) ->
@@ -141,26 +141,37 @@ module.exports =
 						return callback(e)
 					callback null, ops
 
+	DOC_OPS_TTL: 60 * minutes
+	DOC_OPS_MAX_LENGTH: 100
 	pushDocOp: (doc_id, op, callback = (error, new_version) ->) ->
-		# TODO: take a raw op object and JSONify it here
 		jsonOp = JSON.stringify op
-		rclient.rpush keys.docOps(doc_id: doc_id), jsonOp, (error) ->
+		multi = rclient.multi()
+		multi.rpush  keys.docOps(doc_id: doc_id), jsonOp
+		multi.expire keys.docOps(doc_id: doc_id), RedisManager.DOC_OPS_TTL
+		multi.ltrim  keys.docOps(doc_id: doc_id), -RedisManager.DOC_OPS_MAX_LENGTH, -1
+		multi.incr   keys.docVersion(doc_id: doc_id)
+		multi.exec (error, replys) ->
+			[_, __, ___, version] = replys
 			return callback(error) if error?
-			rclient.incr keys.docVersion(doc_id: doc_id), (error, version) ->
-				return callback(error) if error?
-				version = parseInt(version, 10)
-				callback null, version
+			version = parseInt(version, 10)
+			callback null, version
 
-	prependDocOps: (doc_id, ops, callback = (error) ->) ->
-		jsonOps = ops.map (op) -> JSON.stringify op
-		rclient.lpush keys.docOps(doc_id: doc_id), jsonOps.reverse(), callback
+	pushUncompressedHistoryOp: (project_id, doc_id, op, callback = (error, length) ->) ->
+		jsonOp = JSON.stringify op
+		multi = rclient.multi()
+		multi.rpush keys.uncompressedHistoryOp(doc_id: doc_id), jsonOp
+		multi.sadd keys.docsWithHistoryOps(project_id: project_id), doc_id
+		multi.exec (error, results) ->
+			return callback(error) if error?
+			[length, _] = results
+			callback(error, length)
 
 	getDocOpsLength: (doc_id, callback = (error, length) ->) ->
 		rclient.llen keys.docOps(doc_id: doc_id), callback
 
 	getDocIdsInProject: (project_id, callback = (error, doc_ids) ->) ->
 		rclient.smembers keys.docsInProject(project_id: project_id), callback
-		
+
 
 getDocumentsProjectId = (doc_id, callback)->
 	rclient.get keys.projectKey({doc_id:doc_id}), (err, project_id)->
